@@ -1,0 +1,134 @@
+# --- 1. Prometheus Deployment ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      serviceAccountName: prometheus-sa
+      volumes:
+        - name: config-volume
+          configMap:
+            name: prometheus-config
+        - name: prometheus-storage
+          persistentVolumeClaim:
+            claimName: prometheus-pvc
+      containers:
+      - name: prometheus
+        image: prom/prometheus
+        args: ["--config.file=/etc/prometheus/config/prometheus.yml", "--web.enable-lifecycle"]
+        ports:
+        - containerPort: 9090
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/prometheus/config
+        - name: prometheus-storage
+          mountPath: /prometheus
+---
+# --- 1. Prometheus Service (Prometheus Service 누락 오류를 해결합니다.) ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-service
+spec:
+  type: NodePort 
+  ports:
+  - port: 9090
+    targetPort: 9090
+    nodePort: 30090 # 외부 접속 포트: 172.16.8.153:30090 또는 172.16.8.154:30090
+  selector:
+    app: prometheus
+
+# --- 2. Alertmanager Deployment ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alertmanager
+  template:
+    metadata:
+      labels:
+        app: alertmanager
+    spec:
+      volumes:
+        - name: config-volume
+          configMap:
+            name: alertmanager-config
+      containers:
+      - name: alertmanager
+        image: prom/alertmanager
+        args: ["--config.file=/etc/alertmanager/config/alertmanager.yml"]
+        ports:
+        - containerPort: 9093
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/alertmanager/config
+---
+# --- 2. Alertmanager Service ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager-service
+spec:
+  type: ClusterIP # 내부 통신용
+  ports:
+  - port: 9093
+    targetPort: 9093
+  selector:
+    app: alertmanager
+
+# --- 3. Grafana Deployment ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      securityContext:
+        fsGroup: 472
+      volumes:
+        - name: grafana-storage
+          persistentVolumeClaim:
+            claimName: grafana-pvc
+      containers:
+      - name: grafana
+        image: grafana/grafana
+        ports:
+        - containerPort: 3000
+        volumeMounts:
+        - name: grafana-storage
+          mountPath: /var/lib/grafana
+---
+# --- 3. Grafana Service ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana-service
+spec:
+  type: NodePort 
+  ports:
+  - port: 3000
+    targetPort: 3000
+    nodePort: 30000 # 외부 접속 포트: 172.16.8.153:30000 또는 172.16.8.154:30000
+  selector:
+    app: grafana
