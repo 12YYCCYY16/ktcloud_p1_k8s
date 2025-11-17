@@ -1,0 +1,13 @@
+# --- 1. Prometheus Service ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-service
+spec:
+  type: NodePort 
+  ports:
+  - port: 9090
+    targetPort: 9090
+    nodePort: 30090 # 외부 접속 포트
+  selector:
+    app: prometheus
