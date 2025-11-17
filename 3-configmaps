@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+    scrape_configs:
+      # K8s Service Discovery를 사용해 node-exporter Pod들을 자동 탐색
+      - job_name: 'kubernetes-node-exporter'
+        kubernetes_sd_configs:
+          - role: endpoints
+        relabel_configs:
+        - source_labels: [__meta_kubernetes_service_label_app]
+          action: keep
+          regex: node-exporter
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets: ['alertmanager-service:9093']
+    rule_files:
+      - '/etc/prometheus/config/alerts.yml'
+
+  alerts.yml: |
+    groups:
+    - name: OpenStackAutoScaling
+      rules:
+      - alert: HighCpuUsageAutoScalingNeeded
+        expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: 'critical-auto'
+        annotations:
+          summary: "{{ $labels.instance }} 서버 CPU 사용량이 80%를 초과하여 자동 스케일 조치 필요"
+          description: "CPU 사용량이 5분 동안 80%를 초과했습니다. 자동 조치 시스템(Jenkins)을 트리거합니다."
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config
+data:
+  alertmanager.yml: |
+    global: {}
+    route:
+      group_by: ['alertname', 'instance']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 3h
+      receiver: 'default-receiver'
+      routes:
+      - match:
+          severity: 'critical-auto'
+        receiver: 'jenkins-autoscale'
+    receivers:
+      - name: 'default-receiver'
+      - name: 'jenkins-autoscale'
+        webhook_configs:
+          # Jenkins 서버의 IP 주소로 <JENKINS_IP>를 변경
+          - url: 'http://<JENKINS_IP>:8080/job/AutoHealingJob/buildWithParameters?token=YOUR_TOKEN'
+            send_resolved: true
